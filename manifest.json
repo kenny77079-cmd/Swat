@@ -1,7 +1,7 @@
 {
   "name": "史瓦特大進擊",
   "short_name": "史瓦特",
-  "description": "十關橫向射擊遊戲，支援 iPhone 主畫面遊玩。",
+  "description": "十關橫向射擊遊戲，V1.1 精準搖桿與可推動木箱。",
   "lang": "zh-Hant",
   "start_url": "./index.html",
   "scope": "./",
