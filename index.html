@@ -23,7 +23,7 @@
 #joy{touch-action:none;filter:drop-shadow(0 6px 12px #00162588)}
 #joyKnob{transition:background-color .12s;box-shadow:inset 0 2px 10px #ffffff33,0 5px 12px #0008}
 
-/* V1.7: thumb-friendly controls, independent simultaneous touch */
+/* V1.8: thumb-friendly controls, independent simultaneous touch */
 #controls{padding:0 clamp(12px,3vw,32px);bottom:max(26px,env(safe-area-inset-bottom));align-items:end}
 #controls>.group:last-child{position:relative;width:226px;height:188px;display:block;flex:none}
 #controls>.group:last-child>.key{position:absolute;margin:0;touch-action:none}
@@ -44,7 +44,7 @@
  #joy{width:132px;height:132px}
 }
 
-/* V1.7: compact four-button diamond matching annotated screenshot */
+/* V1.8: compact four-button diamond matching annotated screenshot */
 #controls>.group:last-child{width:166px;height:152px}
 #controls .fire{right:0;bottom:5px;width:79px;height:79px}
 #controls .bomb{right:7px;top:0;width:55px;height:55px}
@@ -261,7 +261,61 @@ function soldier(x,y,dir,player,heavy,scale=1){
  g.restore()
 }
 function loop(now){if(state!=='play')return;let dt=Math.min(.033,(now-last)/1000||.016);last=now;update(dt);draw();if(state==='play')requestAnimationFrame(loop)}
-const joy=document.getElementById('joy'),knob=document.getElementById('joyKnob');let joyPointer=null;function setJoy(e){const r=joy.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.32,len=Math.hypot(dx,dy),scale=len>max?max/len:1;let x=dx*scale/max,y=dy*scale/max;joyX=Math.abs(x)<.18?0:Math.sign(x)*Math.pow((Math.abs(x)-.18)/.82,1.6);joyY=y;knob.style.left=`calc(50% + ${dx*scale}px)`;knob.style.top=`calc(50% + ${dy*scale}px)`}function releaseJoy(){joyActive=false;joyPointer=null;joyX=joyY=0;knob.style.left='50%';knob.style.top='50%';joy.classList.remove('active')}joy.addEventListener('pointerdown',e=>{e.preventDefault();if(joyPointer!==null)return;joyPointer=e.pointerId;joyActive=true;joy.setPointerCapture(e.pointerId);joy.classList.add('active');setJoy(e)});joy.addEventListener('pointermove',e=>{if(e.pointerId===joyPointer){e.preventDefault();setJoy(e)}});joy.addEventListener('pointerup',e=>{if(e.pointerId===joyPointer)releaseJoy()});joy.addEventListener('pointercancel',e=>{if(e.pointerId===joyPointer)releaseJoy()});joy.addEventListener('lostpointercapture',e=>{if(e.pointerId===joyPointer)releaseJoy()});
+const joy=document.getElementById('joy'),knob=document.getElementById('joyKnob');
+let joyPointer=null,joyTouch=null,joyLastMove=0;
+function setJoy(e){
+ const r=joy.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+ const dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.32,len=Math.hypot(dx,dy),scale=len>max?max/len:1;
+ const x=dx*scale/max,y=dy*scale/max;
+ joyX=Math.abs(x)<.18?0:Math.sign(x)*Math.pow((Math.abs(x)-.18)/.82,1.6);
+ joyY=y;joyLastMove=performance.now();
+ knob.style.left=`calc(50% + ${dx*scale}px)`;
+ knob.style.top=`calc(50% + ${dy*scale}px)`;
+}
+function releaseJoy(){
+ joyActive=false;joyPointer=null;joyTouch=null;joyX=joyY=0;
+ knob.style.left='50%';knob.style.top='50%';joy.classList.remove('active');
+}
+function touchById(list,id){for(let i=0;i<list.length;i++)if(list[i].identifier===id)return list[i];return null}
+const useTouchJoystick=('ontouchstart' in window);
+if(useTouchJoystick){
+ joy.addEventListener('touchstart',e=>{
+  if(joyTouch!==null)return;
+  const touch=e.changedTouches[0];if(!touch)return;
+  e.preventDefault();joyTouch=touch.identifier;joyActive=true;joy.classList.add('active');setJoy(touch);
+ },{passive:false});
+ window.addEventListener('touchmove',e=>{
+  if(joyTouch===null)return;
+  const touch=touchById(e.touches,joyTouch);
+  if(touch){e.preventDefault();setJoy(touch)}
+  else releaseJoy();
+ },{passive:false});
+ const endTouch=e=>{
+  if(joyTouch===null)return;
+  if(touchById(e.changedTouches,joyTouch)||!touchById(e.touches,joyTouch))releaseJoy();
+ };
+ window.addEventListener('touchend',endTouch,{passive:true});
+ window.addEventListener('touchcancel',endTouch,{passive:true});
+ // Recover if iOS interrupts a touch sequence without delivering a matching end.
+ window.addEventListener('touchstart',e=>{
+  if(joyTouch!==null&&!touchById(e.touches,joyTouch))releaseJoy();
+ },{passive:true});
+}else{
+ joy.addEventListener('pointerdown',e=>{
+  e.preventDefault();if(joyPointer!==null)return;
+  joyPointer=e.pointerId;joyActive=true;joy.classList.add('active');
+  try{joy.setPointerCapture(e.pointerId)}catch(err){}
+  setJoy(e);
+ });
+ joy.addEventListener('pointermove',e=>{if(e.pointerId===joyPointer){e.preventDefault();setJoy(e)}});
+ const endPointer=e=>{if(e.pointerId===joyPointer)releaseJoy()};
+ for(const ev of ['pointerup','pointercancel','lostpointercapture'])joy.addEventListener(ev,endPointer);
+ for(const ev of ['pointerup','pointercancel'])window.addEventListener(ev,endPointer,true);
+}
+window.addEventListener('blur',()=>{releaseJoy();key.jump=false;key.fire=false;key.left=false;key.right=false});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){releaseJoy();key.jump=false;key.fire=false}});
+window.addEventListener('pagehide',releaseJoy);
+window.addEventListener('orientationchange',releaseJoy);
 for(const el of document.querySelectorAll('[data-k]')){let k=el.dataset.k;el.addEventListener('pointerdown',e=>{e.preventDefault();el.setPointerCapture(e.pointerId);el.classList.add('pressed');if(k==='bomb')toss();else if(k==='swap')swapGun();else key[k]=true});const release=e=>{e.preventDefault();el.classList.remove('pressed');if(k!=='bomb'&&k!=='swap')key[k]=false};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',()=>{el.classList.remove('pressed');if(k!=='bomb'&&k!=='swap')key[k]=false})}
-window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if([' ','arrowleft','arrowright','arrowup','j','f'].includes(k))e.preventDefault();if(k==='a'||k==='arrowleft')key.left=true;if(k==='d'||k==='arrowright')key.right=true;if(k===' '||k==='w'||k==='arrowup')key.jump=true;if(k==='j'||k==='f')key.fire=true;if(k==='k'&&!e.repeat)toss()});window.addEventListener('keyup',e=>{let k=e.key.toLowerCase();if(k==='a'||k==='arrowleft')key.left=false;if(k==='d'||k==='arrowright')key.right=false;if(k===' '||k==='w'||k==='arrowup')key.jump=false;if(k==='j'||k==='f')key.fire=false});$('pause').onclick=()=>{if(state==='play'){state='paused';$('pause').textContent='▶';notice('遊戲暫停')}else if(state==='paused'){state='play';$('pause').textContent='Ⅱ';last=performance.now();requestAnimationFrame(loop)}};$('start').onclick=()=>{stage=1;coins=0;kills=0;load(1);state='play';$('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)};if(location.protocol==='file:'){console.info('史瓦特 V1.7：單檔離線模式啟用，請使用 Chrome 開啟 HTML。')}world=maps[0];hero={x:75,y:423,w:28,h:44,face:1,vx:0,on:true};draw();
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if([' ','arrowleft','arrowright','arrowup','j','f'].includes(k))e.preventDefault();if(k==='a'||k==='arrowleft')key.left=true;if(k==='d'||k==='arrowright')key.right=true;if(k===' '||k==='w'||k==='arrowup')key.jump=true;if(k==='j'||k==='f')key.fire=true;if(k==='k'&&!e.repeat)toss()});window.addEventListener('keyup',e=>{let k=e.key.toLowerCase();if(k==='a'||k==='arrowleft')key.left=false;if(k==='d'||k==='arrowright')key.right=false;if(k===' '||k==='w'||k==='arrowup')key.jump=false;if(k==='j'||k==='f')key.fire=false});$('pause').onclick=()=>{if(state==='play'){state='paused';$('pause').textContent='▶';notice('遊戲暫停')}else if(state==='paused'){state='play';$('pause').textContent='Ⅱ';last=performance.now();requestAnimationFrame(loop)}};$('start').onclick=()=>{stage=1;coins=0;kills=0;load(1);state='play';$('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)};if(location.protocol==='file:'){console.info('史瓦特 V1.8：單檔離線模式啟用，請使用 Chrome 開啟 HTML。')}world=maps[0];hero={x:75,y:423,w:28,h:44,face:1,vx:0,on:true};draw();
 })();</script></body></html>
